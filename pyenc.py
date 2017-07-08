@@ -14,9 +14,13 @@ from base64 import b64encode
 
 def encrypt(args):
     f = args.file[0]
+    in_file = f
+    is_dir = False
     if os.access(f, os.R_OK):
         if os.path.isdir(f):
-            pass
+            in_file = f + '.tbz'
+            os.popen('tar cjf {} {}'.format(in_file, f))
+            is_dir = True
     else:
         print 'File or directory not found'
         exit(1)
@@ -26,18 +30,33 @@ def encrypt(args):
     with open(key_path, 'w') as key_file:
         key_file.write(pass_key)
 
-    os.popen('openssl enc -e -bf -salt -base64 -pass file:{} -in {} -out {}.enc'.format(key_path, f, f))
+    os.popen('openssl enc -e -bf -salt -base64 -pass file:{} -in {} -out {}.enc'.format(key_path, in_file, in_file))
+    if is_dir:
+        os.unlink(in_file)
 
 
 def decrypt(args):
     f = args.file[0]
     key_path = f + '.key'
-    in_file = f + '.enc'
-    if not os.access(key_path, os.R_OK) or not os.access(in_file, os.R_OK):
-        print 'Key or encoded data not found'
+    if not os.access(key_path, os.R_OK):
+        print 'Key not found'
         exit(1)
 
-    os.popen('openssl enc -d -bf -salt -base64 -pass file:{} -in {} -out {}'.format(key_path, in_file, f))
+    in_file = f + '.enc'
+    out_file = f
+    is_dir = False
+    if not os.access(in_file, os.R_OK):
+        in_file = f + '.tbz.enc'
+        out_file = f + '.tbz'
+        is_dir = True
+        if not os.access(in_file, os.R_OK):
+            print 'Encoded data not found'
+            exit(1)
+
+    os.popen('openssl enc -d -bf -salt -base64 -pass file:{} -in {} -out {}'.format(key_path, in_file, out_file))
+    if is_dir:
+        os.popen('tar xjf ' + out_file)
+        os.unlink(out_file)
 
 parser = argparse.ArgumentParser(prog='pyenc', description='Encrypt/Decrypt files and folders.')
 subparsers = parser.add_subparsers()

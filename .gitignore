@@ -2,3 +2,6 @@
 testfile.txt
 testfile.txt.key
 testfile.txt.enc
+/testdir/
+testdir.key
+testdir.tbz.enc
