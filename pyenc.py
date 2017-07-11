@@ -3,13 +3,14 @@
 
 import argparse
 import os
-from base64 import b64encode
+from base64 import b64encode, b64decode
 
-# generate the private and public key
-#
-# mkdir ~/.pyenc && cd ~/.pyenc
-# openssl genrsa -out private.pem 3072
-# openssl rsa -pubout -in private.pem -out public.pem -outform PEM
+import rsa
+
+
+def chunk_split(s, l):
+    res = '\n'.join(s[i:min(i + l, len(s))] for i in xrange(0, len(s), l))
+    return res + '\n'
 
 
 def encrypt(args):
@@ -25,8 +26,19 @@ def encrypt(args):
         print 'File or directory not found'
         exit(1)
 
+    public_keydata = ''
+
+    try:
+        with open(os.path.expanduser('~/.pyenc/public.pem'), mode='rb') as public_file:
+            public_keydata = public_file.read()
+    except IOError:
+        print 'Public key not found'
+        exit(1)
+
+    public_key = rsa.PublicKey.load_pkcs1_openssl_pem(public_keydata)
+
     pass_key = b64encode(os.urandom(126))
-    key_path = f + '.key'
+    key_path = f + '.k'
     with open(key_path, 'w') as key_file:
         key_file.write(pass_key)
 
@@ -34,11 +46,17 @@ def encrypt(args):
     if is_dir:
         os.unlink(in_file)
 
+    encoded_key = b64encode(rsa.encrypt(pass_key, public_key))
+    encoded_key_path = f + '.key'
+    with open(encoded_key_path, 'w') as encoded_key_file:
+        encoded_key_file.write(chunk_split(encoded_key, 64))
+    os.unlink(key_path)
+
 
 def decrypt(args):
     f = args.file[0]
-    key_path = f + '.key'
-    if not os.access(key_path, os.R_OK):
+    encoded_key_path = f + '.key'
+    if not os.access(encoded_key_path, os.R_OK):
         print 'Key not found'
         exit(1)
 
@@ -53,10 +71,28 @@ def decrypt(args):
             print 'Encoded data not found'
             exit(1)
 
+    private_keydata = ''
+
+    try:
+        with open(os.path.expanduser('~/.pyenc/private.pem'), mode='rb') as private_file:
+            private_keydata = private_file.read()
+    except IOError:
+        print 'Private key not found'
+        exit(1)
+
+    private_key = rsa.PrivateKey.load_pkcs1(private_keydata)
+
+    key_path = f + '.k'
+    with open(encoded_key_path, 'r') as encoded_key_file:
+        pass_key = rsa.decrypt(b64decode(encoded_key_file.read()), private_key)
+        with open(key_path, 'w') as key_file:
+            key_file.write(pass_key)
+
     os.popen('openssl enc -d -bf -salt -base64 -pass file:{} -in {} -out {}'.format(key_path, in_file, out_file))
     if is_dir:
         os.popen('tar xjf ' + out_file)
         os.unlink(out_file)
+    os.unlink(key_path)
 
 parser = argparse.ArgumentParser(prog='pyenc', description='Encrypt/Decrypt files and folders.')
 subparsers = parser.add_subparsers()
